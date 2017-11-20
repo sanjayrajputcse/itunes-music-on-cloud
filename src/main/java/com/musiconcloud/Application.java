@@ -15,16 +15,25 @@ import com.google.api.services.drive.Drive;
 import com.google.api.services.drive.DriveScopes;
 import com.google.api.services.drive.model.File;
 import com.google.api.services.drive.model.FileList;
+import com.musiconcloud.models.SongMeta;
+import com.musiconcloud.util.Utils;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.*;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.stream.Stream;
 
 /**
  * @author sanjay.rajput on 04 Aug 2017 1:13 AM
  */
 public class Application {
+
+    private static final Logger logger = Logger.getLogger("Application");
 
     private static final String FIELD_DELIMITER = "&FIELD_DELIMETER&";
     private static final String ROW_DELIMITER = "&ROW_DELIMETER&";
@@ -84,8 +93,7 @@ public class Application {
                         .build();
         Credential credential = new AuthorizationCodeInstalledApp(
                 flow, new LocalServerReceiver()).authorize("mac-flipkart");
-        System.out.println(
-                "Credentials saved to " + DATA_STORE_DIR.getAbsolutePath());
+//        System.out.println("Credentials saved to " + DATA_STORE_DIR.getAbsolutePath());
         return credential;
     }
 
@@ -103,57 +111,80 @@ public class Application {
     }
 
     public static void main(String[] args) throws IOException {
-        // Build a new authorized API client service.
+        if (args.length < 3) {
+            logger.log(Level.SEVERE, "NOT ENOUGH PARAMETERS");
+            System.exit(-1);
+        }
         service = getDriveService();
-        String allSongs = args[0];
+        int totalCloudFiles = cacheAllMusicFiles();
 
-        cacheAllMusicFiles();
-        if (allSongs != null && !allSongs.isEmpty()) {
-            List<String> songInfoList = Arrays.asList(allSongs.split(ROW_DELIMITER));
-            songInfoList.stream().forEach(song -> {
-                System.out.println(songInfoList.indexOf(song) + " >. SONG INFO: " + song);
-                List<String> songFields = Arrays.asList(song.split(FIELD_DELIMITER));
-                String fileName = songFields.get(0);
-                String filePath = songFields.get(1);
-                String size = songFields.get(9);
-                try {
-                    if (!isFileExist(fileName)) {
-                        System.out.println("Local File Size: " + Long.parseLong(size) * 1.0/1024/1024);
-                        upload(fileName, filePath, Long.parseLong(size),  "audio/mpeg");
+        String songDetailFilePath = args[0];
+        final long[] count = {Long.parseLong(args[1]), 0, 0, Long.parseLong(args[2]), totalCloudFiles}; //localSongsCount, uploaded, failed, ignored, cloudSongsCount
+
+        if (songDetailFilePath != null && !songDetailFilePath.isEmpty()) {
+            List<SongMeta> songInfoList = readSongsFromFile(songDetailFilePath);
+            songInfoList.forEach(song -> {
+                if (song.isValid()) {
+                    try {
+                        if (!isFileExist(song.getFileName())) {
+//                            System.out.println("fileName: " + song.getFileName() + " , path: " + song.getFilePath() + " , size: " + song.getSize());
+                            upload(song, "audio/mpeg");
+                            count[1]++;
+                            count[4]++;
+                        }
+                    } catch (IOException e) {
+                        logger.log(Level.INFO, "failed to upload\nSong Info: " + song, e);
+//                    System.out.println(e.getStackTrace());
+                        count[2]++;
                     }
-                } catch (IOException e) {
-                    System.out.println(e);
+                } else {
+                    System.out.println("IGNORED << " + song.toString());
+                    count[2]++;
                 }
             });
         }
+        printSummary(count);
 //        printFiles();
     }
 
-    public static void upload(String fileName, String filePath, long size, String contentType) throws IOException {
-        System.out.println("uploading " + fileName + ", at " + filePath);
+    private static void printSummary(long[] count) {
+        System.out.println("\t\t========================= EXPORT SUMMARY ========================");
+        System.out.println("\t\t\t\t\t total    : " + count[0]);
+        System.out.println("\t\t\t\t\t uploaded : " + count[1]);
+        System.out.println("\t\t\t\t\t failed   : " + count[2]);
+        System.out.println("\t\t\t\t\t ignored  : " + count[3]);
+        System.out.println("\t\t\t\t cloud songs count(gDrive): " + count[4]);
+        System.out.println("\t\t=================================================================");
+    }
+
+    public static void upload(SongMeta song, String contentType) throws IOException {
+        System.out.println(song.toString());
         File fileMetadata = new File();
-        fileMetadata.setName(fileName);
+        fileMetadata.setName(song.getFileName());
         fileMetadata.setParents(Collections.singletonList(myMusicFolderID));
-        java.io.File file = new java.io.File(filePath);
+        java.io.File file = new java.io.File(song.getFilePath());
+        if (!file.exists()) {
+            logger.log(Level.INFO, "file does not exist");
+        }
         FileContent mediaContent = new FileContent(contentType, file);
-        long tstart = new Date().getTime();
+        long tStart = new Date().getTime();
         File gFile = service.files().create(fileMetadata, mediaContent)
                 .setFields("id, parents")
                 .execute();
-        long tend = new Date().getTime();
-        allMusicFiles.add(fileName);
-        long duration = (tend - tstart)/1000;
-        System.out.println("File ID: " + gFile.getId() + ", Time Taken: " + duration + " sec, Speed: " + (size*1.0/1024/1024/duration) + " Mbps");
+        long tEnd = new Date().getTime();
+        allMusicFiles.add(song.getFileName());
+        long duration = (tEnd - tStart)/1000;
+        System.out.println("uploaded " + gFile.getId() + " in " + duration + " sec at " + Utils.df.format(song.getSizeInLong() * 1.0/1024/1024/duration) + " mbps");
     }
 
     public static boolean isFileExist(String fileToSearch) throws IOException {
-        System.out.println("checking for file: " + fileToSearch);
+//        System.out.println("checking for file: " + fileToSearch);
         if (!allMusicFiles.isEmpty()) {
-            System.out.println("Total File Count: " + allMusicFiles.size());
+//            System.out.println("Total File Count: " + allMusicFiles.size());
             for (String file : allMusicFiles) {
                 if (file != null && fileToSearch != null) {
                     if (file.equalsIgnoreCase(fileToSearch)) {
-                        System.out.println("file already exist");
+//                        System.out.println("file already exist");
                         return true;
                     }
                 } else {
@@ -164,8 +195,9 @@ public class Application {
         return false;
     }
 
-    public static void cacheAllMusicFiles() throws IOException {
+    public static int cacheAllMusicFiles() throws IOException {
         String pageToken = null;
+        List<File> files = new ArrayList<>();
         do {
             FileList result = service.files().list()
                     .setSpaces("drive")
@@ -174,14 +206,48 @@ public class Application {
                     .setQ("'" + myMusicFolderID + "' in parents")
                     .setFields("nextPageToken, files(id, name)")
                     .execute();
-            System.out.println("Result Size: " + result.size());
-            List<File> files = result.getFiles();
+            files = result.getFiles();
             if (files != null && files.size() > 0) {
+                System.out.println("total files in cloud: " + files.size());
                 files.forEach(x -> allMusicFiles.add(x.getName()));
             }
             pageToken = result.getNextPageToken();
-            System.out.println("Token: " + pageToken);
+//            System.out.println("Token: " + pageToken);
         } while (pageToken != null);
+        return files.size();
+    }
+
+    public static List<SongMeta> readSongsFromFile(String filePath) throws IOException {
+        List<SongMeta> songs = new ArrayList<>();
+        try (Stream<String> stream = Files.lines(Paths.get(filePath))) {
+            stream.forEach(song -> {
+                try {
+                    List<String> songFields = Arrays.asList(song.split(FIELD_DELIMITER));
+                    int fields = songFields.size();
+                    String fileName = Utils.smartTrim(songFields.get(0));
+                    String fileLocation = Utils.smartTrim(songFields.get(1));
+                    String name = Utils.smartTrim(songFields.get(2));
+                    String artist = Utils.smartTrim(songFields.get(3));
+                    String album = Utils.smartTrim(songFields.get(4));
+                    String time = Utils.smartTrim(songFields.get(5));
+                    String rating = Utils.smartTrim(songFields.get(6));
+                    String genre = Utils.smartTrim(songFields.get(7));
+                    String year = Utils.smartTrim(songFields.get(8));
+                    String size = Utils.smartTrim(songFields.get(9));
+                    String kind = null;
+                    if (fields >= 11)
+                        kind = Utils.smartTrim(songFields.get(10));
+                    String extension = null;
+                    if (fileName.contains("."))
+                        extension = fileName.substring(fileName.lastIndexOf("."));
+
+                    songs.add(new SongMeta(name, artist, album, size, fileName, fileLocation, time, rating, genre, year, kind, extension));
+                } catch (Exception e) {
+                    logger.log(Level.SEVERE, "failed to parse song meta\n" + song + "\n", e);
+                }
+            });
+        }
+        return songs;
     }
 
     public static void printFiles() throws IOException {
@@ -201,5 +267,4 @@ public class Application {
             }
         }
     }
-
 }

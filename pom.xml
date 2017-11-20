@@ -35,6 +35,11 @@
             <artifactId>google-api-services-drive</artifactId>
             <version>${google.api.serivice.drive.client.version}</version>
         </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>1.16.2</version>
+        </dependency>
     </dependencies>
 
 
