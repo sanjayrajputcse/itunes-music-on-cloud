@@ -6,6 +6,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import static com.musiconcloud.models.Constants.MAX_SONG_LENGTH;
+
 /**
  * @author sanjay.rajput on 20 Nov 2017 7:50 PM
  */
@@ -14,7 +16,7 @@ import lombok.Setter;
 @Setter
 @AllArgsConstructor
 @NoArgsConstructor
-public class SongMeta {
+public class LocalSongMeta {
 
     private String name;
     private String artist;
@@ -34,7 +36,7 @@ public class SongMeta {
         return "name='" + name + '\'' +
                 ", artist='" + artist + '\'' +
                 ", album='" + album + '\'' +
-                ", size='" + Utils.getFileSize(Long.parseLong(size)) + '\'' +
+                ", size='" + size + '\'' +
                 ", fileName='" + fileName + '\'' +
                 ", filePath='" + filePath + '\'' +
                 ", time='" + time + '\'' +
@@ -44,8 +46,14 @@ public class SongMeta {
                 ", kind='" + kind + '\'';
     }
 
+    public boolean compare(LocalSongMeta localSongMeta) {
+        return fileName.equals(localSongMeta.fileName);
+    }
+
     public boolean isValid() {
-        if (filePath.contains("missing value")){
+        if (filePath.contains("missing value") ||
+                size.contains("E+") ||
+                getSizeInLong() > MAX_SONG_LENGTH){
             return false;
         }
         return isAudioFile();
@@ -58,4 +66,5 @@ public class SongMeta {
     public long getSizeInLong() {
         return Long.parseLong(size);
     }
+
 }

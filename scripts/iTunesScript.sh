@@ -76,29 +76,22 @@ for i in "${songs[@]}"; do
 	IFS='%%' read -ra ADDR <<< "$i"
 	#echo "Song INFO: ${ADDR[*]}"
 	#echo "1: ${ADDR[1]} 2: ${ADDR[2]} 3: ${ADDR[3]} 4: ${ADDR[4]} 5: ${ADDR[5]} 6: ${ADDR[6]} 7: ${ADDR[7]} 8: ${ADDR[8]} 9: ${ADDR[9]} 10: ${ADDR[10]} 11: ${ADDR[11]} "
-	name=$(trim "${ADDR[2]}")
-	artist=$(trim "${ADDR[4]}")
-	album=$(trim "${ADDR[6]}")
-	time=$(trim "${ADDR[8]}")
+	name="${ADDR[2]}"
+	artist="${ADDR[4]}"
+	album="${ADDR[6]}"
+	time="${ADDR[8]}"
 	location=$(parseLocation "${ADDR[10]}")
 	fileName=`echo ${location##*/}`
-	rating=$(trim "${ADDR[12]}")
-	genre=$(trim "${ADDR[14]}")
-	year=$(trim "${ADDR[16]}")
-	size=$(trim "${ADDR[20]}")
-	kind=$(trim "${ADDR[22]}")
+	rating="${ADDR[12]}"
+	genre="${ADDR[14]}"
+	year="${ADDR[16]}"
+	size="${ADDR[20]}"
+	kind="${ADDR[22]}"
 	fSize=$(formatFileSize "$size")
 	#echo "$c. Name: $name, Artist: $artist, Album: $album, Time: $time, Location: $location, rating: $rating, genre: $genre, year: $year, size: $fSize, kind: $kind"
 	c=$((c+1))
-	if [ "$fileName" != "missing value" ] && [ "$location" != "missing value" ] && [[ ${size} != *"E+"* ]] && (( $(bc <<< "$size < $maxSongSize") )); then
-		total_size=$(bc <<< "$total_size + $size")
-		current_song_info="$fileName$fieldDelimiter$location$fieldDelimiter$name$fieldDelimiter$artist$fieldDelimiter$album$fieldDelimiter$time$fieldDelimiter$rating$fieldDelimiter$genre$fieldDelimiter$year$fieldDelimiter$size$fieldDelimiter$kind"
-		echo "$current_song_info" >> $tempSongFile
-	else
-		fSize=$(formatFileSize "$size")
-		#echo "IGNORED << $c. Name: $name, Artist: $artist, Album: $album, Time: $time, Location: $location, rating: $rating, genre: $genre, year: $year, size: $fSize, kind: $kind"
-		ignored=$((ignored + 1))
-	fi
+	current_song_info="$fileName$fieldDelimiter$location$fieldDelimiter$name$fieldDelimiter$artist$fieldDelimiter$album$fieldDelimiter$time$fieldDelimiter$rating$fieldDelimiter$genre$fieldDelimiter$year$fieldDelimiter$size$fieldDelimiter$kind"
+	echo "$current_song_info" >> $tempSongFile
 done
 
 echo uploading...

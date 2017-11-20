@@ -15,9 +15,10 @@ import com.google.api.services.drive.Drive;
 import com.google.api.services.drive.DriveScopes;
 import com.google.api.services.drive.model.File;
 import com.google.api.services.drive.model.FileList;
-import com.musiconcloud.models.SongMeta;
+import com.musiconcloud.models.LocalSongMeta;
 import com.musiconcloud.util.Utils;
 
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -27,6 +28,8 @@ import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
+
+import static com.musiconcloud.models.Constants.*;
 
 /**
  * @author sanjay.rajput on 04 Aug 2017 1:13 AM
@@ -39,10 +42,16 @@ public class Application {
     private static final String ROW_DELIMITER = "&ROW_DELIMETER&";
     private static final String myMusicFolderID = "0B9mh_-WKGdSYMjloQVBlMUVmM00";
 
-    private static Drive service;
-    private static List<String> allMusicFiles = new ArrayList<>();
+    private static Drive drive;
 
-    /** Application name. */
+    /** Music files from google drive folder */
+    private static List<File> cloudMusicFileList = new ArrayList<>();
+    private static List<String> cloudAudioFileNameList = new ArrayList<>();
+
+    /** Local Audio files */
+    private static List<LocalSongMeta> localMusicFiles = new ArrayList<>();
+
+    /** Application name */
     private static final String APPLICATION_NAME = "Drive API Java Quickstart";
 
     /** Directory to store user credentials for this application. */
@@ -98,8 +107,8 @@ public class Application {
     }
 
     /**
-     * Build and return an authorized Drive client service.
-     * @return an authorized Drive client service
+     * Build and return an authorized Drive client drive.
+     * @return an authorized Drive client drive
      * @throws IOException
      */
     public static Drive getDriveService() throws IOException {
@@ -115,16 +124,21 @@ public class Application {
             logger.log(Level.SEVERE, "NOT ENOUGH PARAMETERS");
             System.exit(-1);
         }
-        service = getDriveService();
-        int totalCloudFiles = cacheAllMusicFiles();
+        drive = getDriveService();
+        cacheAllMusicFiles();
+        export(args[0], Long.parseLong(args[1]), Long.parseLong(args[2]));
+        importAudio();
 
-        String songDetailFilePath = args[0];
-        final long[] count = {Long.parseLong(args[1]), 0, 0, Long.parseLong(args[2]), totalCloudFiles}; //localSongsCount, uploaded, failed, ignored, cloudSongsCount
+//        printFiles();
+    }
 
+    public static void export(String songDetailFilePath, long localSongsCount, long ignoredSongsCount) throws IOException {
+        final long[] count = {localSongsCount, 0, 0, ignoredSongsCount, cloudMusicFileList.size()}; //localSongsCount, uploaded, failed, ignored, cloudSongsCount
         if (songDetailFilePath != null && !songDetailFilePath.isEmpty()) {
-            List<SongMeta> songInfoList = readSongsFromFile(songDetailFilePath);
+            List<LocalSongMeta> songInfoList = readSongsFromFile(songDetailFilePath);
             songInfoList.forEach(song -> {
                 if (song.isValid()) {
+                    localMusicFiles.add(song);
                     try {
                         if (!isFileExist(song.getFileName())) {
 //                            System.out.println("fileName: " + song.getFileName() + " , path: " + song.getFilePath() + " , size: " + song.getSize());
@@ -134,30 +148,28 @@ public class Application {
                         }
                     } catch (IOException e) {
                         logger.log(Level.INFO, "failed to upload\nSong Info: " + song, e);
-//                    System.out.println(e.getStackTrace());
                         count[2]++;
                     }
                 } else {
                     System.out.println("IGNORED << " + song.toString());
-                    count[2]++;
+                    count[3]++;
                 }
             });
         }
-        printSummary(count);
-//        printFiles();
+        printExportSummary(count);
     }
 
-    private static void printSummary(long[] count) {
-        System.out.println("\t\t========================= EXPORT SUMMARY ========================");
-        System.out.println("\t\t\t\t\t total    : " + count[0]);
-        System.out.println("\t\t\t\t\t uploaded : " + count[1]);
-        System.out.println("\t\t\t\t\t failed   : " + count[2]);
-        System.out.println("\t\t\t\t\t ignored  : " + count[3]);
-        System.out.println("\t\t\t\t cloud songs count(gDrive): " + count[4]);
-        System.out.println("\t\t=================================================================");
+    private static void printExportSummary(long[] count) {
+        System.out.println("\n========================= EXPORT SUMMARY ========================");
+        System.out.println("\t\t\t total    : " + count[0]);
+        System.out.println("\t\t\t uploaded : " + count[1]);
+        System.out.println("\t\t\t failed   : " + count[2]);
+        System.out.println("\t\t\t ignored  : " + count[3]);
+        System.out.println("\t\t cloud songs count(gDrive): " + count[4]);
+        System.out.println("=================================================================");
     }
 
-    public static void upload(SongMeta song, String contentType) throws IOException {
+    public static void upload(LocalSongMeta song, String contentType) throws IOException {
         System.out.println(song.toString());
         File fileMetadata = new File();
         fileMetadata.setName(song.getFileName());
@@ -168,20 +180,20 @@ public class Application {
         }
         FileContent mediaContent = new FileContent(contentType, file);
         long tStart = new Date().getTime();
-        File gFile = service.files().create(fileMetadata, mediaContent)
+        File gFile = drive.files().create(fileMetadata, mediaContent)
                 .setFields("id, parents")
                 .execute();
         long tEnd = new Date().getTime();
-        allMusicFiles.add(song.getFileName());
+        cloudAudioFileNameList.add(song.getFileName());
         long duration = (tEnd - tStart)/1000;
         System.out.println("uploaded " + gFile.getId() + " in " + duration + " sec at " + Utils.df.format(song.getSizeInLong() * 1.0/1024/1024/duration) + " mbps");
     }
 
     public static boolean isFileExist(String fileToSearch) throws IOException {
 //        System.out.println("checking for file: " + fileToSearch);
-        if (!allMusicFiles.isEmpty()) {
-//            System.out.println("Total File Count: " + allMusicFiles.size());
-            for (String file : allMusicFiles) {
+        if (!cloudAudioFileNameList.isEmpty()) {
+//            System.out.println("Total File Count: " + cloudAudioFileNameList.size());
+            for (String file : cloudAudioFileNameList) {
                 if (file != null && fileToSearch != null) {
                     if (file.equalsIgnoreCase(fileToSearch)) {
 //                        System.out.println("file already exist");
@@ -196,29 +208,29 @@ public class Application {
     }
 
     public static int cacheAllMusicFiles() throws IOException {
+        System.out.println("caching gdrive response");
         String pageToken = null;
-        List<File> files = new ArrayList<>();
         do {
-            FileList result = service.files().list()
+            FileList result = drive.files().list()
                     .setSpaces("drive")
                     .setPageSize(1000)
                     .setPageToken(pageToken)
                     .setQ("'" + myMusicFolderID + "' in parents")
-                    .setFields("nextPageToken, files(id, name)")
+                    .setFields("nextPageToken, files(id, name, originalFilename, fullFileExtension, fileExtension, size, description, mimeType)")
                     .execute();
-            files = result.getFiles();
-            if (files != null && files.size() > 0) {
-                System.out.println("total files in cloud: " + files.size());
-                files.forEach(x -> allMusicFiles.add(x.getName()));
+            cloudMusicFileList = result.getFiles();
+            if (cloudMusicFileList != null && cloudMusicFileList.size() > 0) {
+                System.out.println("total files in cloud: " + cloudMusicFileList.size());
+                cloudMusicFileList.forEach(x -> cloudAudioFileNameList.add(x.getName()));
             }
             pageToken = result.getNextPageToken();
 //            System.out.println("Token: " + pageToken);
         } while (pageToken != null);
-        return files.size();
+        return cloudMusicFileList.size();
     }
 
-    public static List<SongMeta> readSongsFromFile(String filePath) throws IOException {
-        List<SongMeta> songs = new ArrayList<>();
+    public static List<LocalSongMeta> readSongsFromFile(String filePath) throws IOException {
+        List<LocalSongMeta> songs = new ArrayList<>();
         try (Stream<String> stream = Files.lines(Paths.get(filePath))) {
             stream.forEach(song -> {
                 try {
@@ -240,8 +252,7 @@ public class Application {
                     String extension = null;
                     if (fileName.contains("."))
                         extension = fileName.substring(fileName.lastIndexOf("."));
-
-                    songs.add(new SongMeta(name, artist, album, size, fileName, fileLocation, time, rating, genre, year, kind, extension));
+                    songs.add(new LocalSongMeta(name, artist, album, size, fileName, fileLocation, time, rating, genre, year, kind, extension));
                 } catch (Exception e) {
                     logger.log(Level.SEVERE, "failed to parse song meta\n" + song + "\n", e);
                 }
@@ -252,10 +263,10 @@ public class Application {
 
     public static void printFiles() throws IOException {
         // Print the names and IDs for up to 10 files.
-        FileList result = service.files().list()
-                .setPageSize(10)
+        FileList result = drive.files().list()
+                .setPageSize(1000)
                 .setQ("'" + myMusicFolderID +"' in parents")
-                .setFields("nextPageToken, files(id, name)")
+                .setFields("nextPageToken, files(id, name, originalFilename, fullFileExtension, fileExtension, size, description, mimeType)")
                 .execute();
         List<File> files = result.getFiles();
         if (files == null || files.size() == 0) {
@@ -263,8 +274,58 @@ public class Application {
         } else {
             System.out.println("Music Files:");
             for (File file : files) {
-                System.out.println(file.getName() + " " + file.getSize() + " " + file.getKind() + " " + file.getCreatedTime() + " " + file.getPermissions());
+                System.out.println(file.toString());
             }
         }
+    }
+
+    private static void importAudio() throws IOException {
+        System.out.println("\n\n===== 2. Importing songs from google drive =====");
+        List<File> newFiles = new ArrayList<>();
+        long[] count = {1};
+        cloudMusicFileList.forEach(cmf -> {
+            boolean exist = localMusicFiles.stream().anyMatch(lmf -> lmf.getFileName().equalsIgnoreCase(cmf.getName()));
+            if (!exist && AUDIO_FILE_FORMATS.contains(cmf.getMimeType().toLowerCase())) {
+//                System.out.println(count[0] + ". " + cmf.getName() + "\n" + cmf.toString());
+                newFiles.add(cmf);
+                count[0]++;
+            }
+        });
+        System.out.println("total new audios from gdrive: " + newFiles.size());
+        if (newFiles.size() < MAX_DOWNLOAD_FILES) {
+            newFiles.forEach(f -> {
+                try {
+                    String fileName = f.getName();
+                    downloadFile(f.getId(), LOCAL_AUDIO_STORAGE_BASE_PATH + "/" + fileName, f.getSize(), fileName);
+                    addToiTunesLib(fileName);
+                } catch (IOException e) {
+                    System.out.println(e.getStackTrace());
+                }
+            });
+        } else {
+            logger.log(Level.SEVERE, "too many files, won't download");
+        }
+    }
+
+    private static void downloadFile(String googleFileId, String destinationFile, Long size, String name) throws IOException {
+        if (Utils.isFileExist(destinationFile)) {
+            System.out.println("file already exist");
+            return;
+        }
+        System.out.println("downloading " + name + " of size " + Utils.getFileSize(size));
+        long tStart = new Date().getTime();
+        FileOutputStream fos = new FileOutputStream(new java.io.File(destinationFile));
+        drive.files().get(googleFileId).executeMediaAndDownloadTo(fos);
+        long tEnd = new Date().getTime();
+        long duration = (tEnd - tStart)/1000;
+        System.out.println("downloaded in " + duration + " sec at " + Utils.df.format(size * 1.0/1024/1024/duration) + " mbps !!!");
+    }
+
+    private static void addToiTunesLib(String fileName) {
+        System.out.println("adding " + fileName + " to iTunes Library");
+        String iPath = LOCAL_AUDIO_STORAGE_BASE_PATH.replaceAll("/", ":").substring(1) + ":" + fileName;
+        System.out.println("iPath : " + iPath);
+        String[] command = {"osascript", "-e", "tell application \"iTunes\" to add alias (\"" + iPath + "\")"};
+        Utils.executeCommand(command);
     }
 }

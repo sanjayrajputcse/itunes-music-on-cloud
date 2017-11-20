@@ -1,5 +1,8 @@
 package com.musiconcloud.util;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.InputStreamReader;
 import java.text.DecimalFormat;
 import java.util.Arrays;
 import java.util.List;
@@ -43,5 +46,36 @@ public class Utils {
 
     public static boolean isAudioFile(String fileExtension) {
         return fileExtension != null && mp3Formats.contains(fileExtension.toLowerCase());
+    }
+
+    public static boolean isFileExist(String filePath) {
+        return new File(filePath).exists();
+    }
+
+    public static String executeCommand(String[] command) {
+        System.out.println("executing command: " + Arrays.asList(command));
+        StringBuffer output = new StringBuffer();
+        StringBuffer error = new StringBuffer();
+        Process p;
+        try {
+            p = Runtime.getRuntime().exec(command);
+            p.waitFor();
+            BufferedReader readerOut = new BufferedReader(new InputStreamReader(p.getInputStream()));
+            BufferedReader readerError = new BufferedReader(new InputStreamReader(p.getErrorStream()));
+            String line = "";
+            while ((line = readerOut.readLine())!= null) {
+                output.append(line + "\n");
+            }
+            line = "";
+            while ((line = readerError.readLine())!= null) {
+                error.append(line + "\n");
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        System.out.println("output: " + output.toString());
+        System.out.println("error: " + error.toString());
+        return output.toString();
+
     }
 }
