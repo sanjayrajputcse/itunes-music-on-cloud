@@ -55,9 +55,6 @@ tell application "iTunes"
 end tell
 EOF`
 
-#echo $all_lib_songs
-#echo "saperating individual song.."
-
 declare -a songs
 counter=0
 IFS="<<>>" read -ra ADDR <<< ",$all_lib_songs"
@@ -69,8 +66,6 @@ for i in "${ADDR[@]}"; do
 done
 total_songs=$counter
 echo "Total Songs: $total_songs"
-
-#echo ${songs[*]}
 echo "extracting individual song info..."
 c=0
 total_size=0
@@ -85,7 +80,6 @@ for i in "${songs[@]}"; do
 	artist=$(trim "${ADDR[4]}")
 	album=$(trim "${ADDR[6]}")
 	time=$(trim "${ADDR[8]}")
-	#echo "${ADDR[10]}"
 	location=$(parseLocation "${ADDR[10]}")
 	fileName=`echo ${location##*/}`
 	rating=$(trim "${ADDR[12]}")
@@ -95,20 +89,11 @@ for i in "${songs[@]}"; do
 	kind=$(trim "${ADDR[22]}")
 	fSize=$(formatFileSize "$size")
 	#echo "$c. Name: $name, Artist: $artist, Album: $album, Time: $time, Location: $location, rating: $rating, genre: $genre, year: $year, size: $fSize, kind: $kind"
-	#ls -l "$location"
-	#echo $fileName
 	c=$((c+1))
 	if [ "$fileName" != "missing value" ] && [ "$location" != "missing value" ] && [[ ${size} != *"E+"* ]] && (( $(bc <<< "$size < $maxSongSize") )); then
 		total_size=$(bc <<< "$total_size + $size")
 		current_song_info="$fileName$fieldDelimiter$location$fieldDelimiter$name$fieldDelimiter$artist$fieldDelimiter$album$fieldDelimiter$time$fieldDelimiter$rating$fieldDelimiter$genre$fieldDelimiter$year$fieldDelimiter$size$fieldDelimiter$kind"
-		#all_songs_info="$all_songs_info$current_song_info"
 		echo "$current_song_info" >> $tempSongFile
-		#if (( $c % $pageSize == 0 ))
-		#then
-		#	#echo Current Track Location: $c
-		#	$java -jar $musicOnCloud "$all_songs_info"
-		#	all_songs_info=""
-		#fi
 	else
 		fSize=$(formatFileSize "$size")
 		#echo "IGNORED << $c. Name: $name, Artist: $artist, Album: $album, Time: $time, Location: $location, rating: $rating, genre: $genre, year: $year, size: $fSize, kind: $kind"
@@ -116,8 +101,6 @@ for i in "${songs[@]}"; do
 	fi
 done
 
-#echo Total Size: $(formatFileSize "$total_size")
 echo uploading...
 $java -jar $musicOnCloud $tempSongFile $c $ignored
-#echo IGNORED: $ignored
 exit 0
